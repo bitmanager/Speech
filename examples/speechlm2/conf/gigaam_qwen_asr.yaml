@@ -1,0 +1,71 @@
+# Offline Russian ASR adaptation using the upstream dual-head model and trainer.
+defaults:
+  - duplex_stt
+  - _self_
+
+model:
+  pretrained_llm: ${oc.env:QWEN_MODEL_PATH}
+  pretrained_asr: null
+  predict_user_text: true
+  bos_token: "<|im_start|>"
+  eos_token: "<|im_end|>"
+  pad_token: "<|endoftext|>"
+  # Transcription-only data must not teach the agent to output silence.
+  text_loss_weight: 0.0
+  asr_loss_weight: 1.0
+  duplex_text_channel_weight: 0.0
+  force_align_user_text: false
+  normalize_asr_wer: false  # Raw WER: do not apply the default English number normalizer to Russian.
+  validation_save_path: ${oc.env:ASR_OUTPUT_DIR}
+  freeze_params: ['.*']
+  prevent_freeze_params: ['^perception\.proj\.', '^asr_head\.', '^embed_asr_tokens\.']
+  custom_perception:
+    _target_: nemo.collections.speechlm2.modules.gigaam_perception.GigaAMPerception
+    checkpoint: ${oc.env:GIGAAM_CHECKPOINT}
+    frame_length: ${data.frame_length}
+  optimizer:
+    lr: 1e-4
+  lr_scheduler:
+    warmup_steps: 100
+
+trainer:
+  devices: 1
+  max_steps: 6000
+  limit_train_batches: 1.0
+  val_check_interval: 800  # Microbatches: 200 optimizer steps with accumulation=4.
+  check_val_every_n_epoch: null
+  limit_val_batches: 16
+  num_sanity_val_steps: 2
+  accumulate_grad_batches: 4
+
+data:
+  output_roles: [assistant]
+  train_ds:
+    input_cfg:
+      - type: lhotse
+        cuts_path: ${oc.env:ASR_DATA_DIR}/train.jsonl.gz
+    fault_tolerant_audio_loading: false
+    num_workers: 4
+    batch_size: 8
+    use_bucketing: true
+    num_buckets: 10
+    bucket_buffer_size: 10000
+  validation_ds:
+    datasets:
+      val_set_0:
+        shar_path: null
+        cuts_path: ${oc.env:ASR_DATA_DIR}/validation.jsonl.gz
+    fault_tolerant_audio_loading: false
+    batch_size: 4
+
+exp_manager:
+  create_tensorboard_logger: true
+  resume_if_exists: false
+  max_time_per_run: null
+  checkpoint_callback_params:
+    monitor: val_src_wer
+    mode: min
+    save_top_k: 1
+    save_last: true
+    every_n_epochs: 0
+    every_n_train_steps: 200

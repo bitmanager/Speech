@@ -17,6 +17,7 @@ import os
 import re
 
 import torch
+from hydra.utils import instantiate
 from lightning import LightningModule
 from omegaconf import DictConfig
 from peft import PeftModel
@@ -114,7 +115,10 @@ class DuplexSTTModel(LightningModule, HFHubMixin):
         maybe_install_lora(self)
 
         # Load the pretrained streaming ASR model
-        setup_speech_encoder(self, pretrained_weights=self.cfg.pretrained_weights)
+        if self.cfg.get("custom_perception"):
+            self.perception = instantiate(self.cfg.custom_perception, output_dim=self.llm.config.hidden_size)
+        else:
+            setup_speech_encoder(self, pretrained_weights=self.cfg.pretrained_weights)
 
         maybe_load_pretrained_models(self)
 
@@ -453,7 +457,7 @@ class DuplexSTTModel(LightningModule, HFHubMixin):
 
         if self.predict_user_text:
             self.src_bleu = BLEU().reset()
-            self.src_wer = WER().reset()
+            self.src_wer = WER(normalize=self.cfg.get("normalize_asr_wer", True)).reset()
             self.empty_user_text = EmptyTextMetric().reset()
 
     def on_validation_epoch_end(self, prefix="val") -> None:
