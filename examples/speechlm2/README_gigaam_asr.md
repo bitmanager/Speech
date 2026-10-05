@@ -51,6 +51,9 @@ python -m pytest --noconftest -s \
 
 torchrun --standalone --nproc_per_node=2 examples/speechlm2/stt_duplex_train.py \
   --config-name gigaam_qwen_asr trainer.devices=2 trainer.max_steps=3000
+
+# In another terminal: the unchanged upstream validator on GPU 2.
+CUDA_VISIBLE_DEVICES=2 bash examples/speechlm2/validate_gigaam_checkpoints.sh "$ASR_OUTPUT_DIR" 3000
 ```
 
 The converter joins `shard/key`, removes stress marks, uses actual audio lengths,
